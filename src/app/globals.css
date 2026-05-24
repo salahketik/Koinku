@@ -1,4 +1,3 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -37,8 +36,13 @@
   }
   body {
     @apply bg-background text-foreground font-body transition-colors duration-300 antialiased;
+    /* Kunci viewport untuk iOS PWA stability */
     height: 100dvh;
+    width: 100vw;
     overflow: hidden;
+    position: fixed;
+    touch-action: manipulation;
+    -webkit-overflow-scrolling: touch;
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
