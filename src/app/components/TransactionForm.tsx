@@ -1,10 +1,11 @@
+
 "use client"
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { X, Sparkles, Loader2, Check, Search } from 'lucide-react';
+import { X, Sparkles, Loader2, Check, Search, Percent } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from '@/components/ui/form';
 import { cn } from '@/lib/utils';
@@ -100,7 +101,7 @@ export function TransactionForm({ categories, initialData, pastTransactions = []
           
           if (result.confidenceScore > 85) {
             form.setValue('categoryId', found.id);
-            toast({ title: "Saran AI Diterapkan Otomatis", description: `Confidence: ${result.confidenceScore}%` });
+            toast({ title: "Kategori Diterapkan Otomatis", description: `Confidence: ${result.confidenceScore}%` });
           }
         }
       }
@@ -115,7 +116,6 @@ export function TransactionForm({ categories, initialData, pastTransactions = []
     if (aiSuggestion) {
       form.setValue('categoryId', aiSuggestion.categoryId);
       setAiSuggestion(null);
-      toast({ title: "Kategori Terpilih", description: aiSuggestion.name });
     }
   };
 
@@ -176,7 +176,7 @@ export function TransactionForm({ categories, initialData, pastTransactions = []
             {/* Deskripsi */}
             <div className="space-y-4">
               <div className="flex items-center justify-between px-1">
-                <label className="text-[10px] font-black uppercase opacity-30 tracking-widest">Catatan</label>
+                <label className="text-[10px] font-black uppercase opacity-30 tracking-widest">Catatan / Deskripsi</label>
                 <button 
                   type="button" 
                   onClick={handleAISuggestion} 
@@ -184,7 +184,7 @@ export function TransactionForm({ categories, initialData, pastTransactions = []
                   className="flex items-center gap-2 text-[9px] font-black uppercase text-accent hover:opacity-70 disabled:opacity-20 transition-all"
                 >
                   {isSuggesting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                  Cek Kategori AI
+                  Analisa AI
                 </button>
               </div>
               <FormField control={form.control} name="description" render={({ field }) => (
@@ -205,13 +205,13 @@ export function TransactionForm({ categories, initialData, pastTransactions = []
                     <div className="flex items-center gap-3">
                       <Sparkles className="h-4 w-4 text-accent" />
                       <div className="text-left">
-                        <p className="text-[8px] font-black uppercase opacity-40">Prediksi AI</p>
+                        <p className="text-[8px] font-black uppercase opacity-40">Saran Kategori</p>
                         <p className="text-xs font-black uppercase">{aiSuggestion.name}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-[8px] font-black uppercase opacity-40">Confidence</p>
-                      <p className="text-xs font-black">{aiSuggestion.confidence}%</p>
+                    <div className="flex items-center gap-2 bg-white/50 px-3 py-1.5 rounded-xl neo-border border-1">
+                      <Percent className="h-3 w-3 opacity-30" />
+                      <p className="text-xs font-black italic">{aiSuggestion.confidence}</p>
                     </div>
                   </button>
                 </div>

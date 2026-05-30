@@ -1,10 +1,6 @@
 'use server';
 /**
- * @fileOverview A GenAI tool for suggesting categories for financial transactions.
- *
- * - suggestTransactionCategory - A function that suggests a category for a given transaction.
- * - TransactionCategorySuggestionInput - The input type for the suggestTransactionCategory function.
- * - TransactionCategorySuggestionOutput - The return type for the suggestTransactionCategory function.
+ * @fileOverview A GenAI tool for suggesting categories for financial transactions with advanced logic.
  */
 
 import {ai} from '@/ai/genkit';
@@ -37,7 +33,34 @@ const prompt = ai.definePrompt({
   name: 'transactionCategorySuggestionPrompt',
   input: {schema: TransactionCategorySuggestionInputSchema},
   output: {schema: TransactionCategorySuggestionOutputSchema},
-  prompt: `You are an AI financial assistant that helps users categorize their transactions.\nGiven a new transaction and a list of past transactions with their categories, suggest the most appropriate category for the new transaction.\n\nHere are some of the user's past transactions and their assigned categories:\n{{#if pastTransactions}}\n{{#each pastTransactions}}\n- Type: {{{type}}}, Description: {{{description}}}, Category: {{{category}}}\n{{/each}}\n{{else}}\nNo past transactions provided.\n{{/if}}\n\nNew Transaction Details:\n- Type: {{{type}}}\n- Description: {{{description}}}\n- Amount: {{{amount}}}\n\nBased on the information above, suggest a single category that best fits the 'New Transaction'.\nPrioritize existing categories from past transactions as examples if they are a good fit.\nIf no clear existing category exists, suggest a new, appropriate and concise category.\nProvide a confidence score from 0 to 100 for your suggestion and a very brief reasoning in Indonesian.\n\nReturn the response in JSON format.`,
+  prompt: `Anda adalah asisten keuangan cerdas untuk aplikasi KOIN KU. Tugas Anda adalah memberikan kategori yang paling akurat berdasarkan tipe transaksi (Masuk/Keluar) dan deskripsi.
+
+Daftar Kategori yang Tersedia:
+- PENGELUARAN (Expense): Makan & Minum, Transportasi, Kost & Sewa, Belanja & Gaya Hidup, Tagihan & Pulsa, Cicilan & Hutang, Investasi & Tabungan, Pinjaman (Lending), Kesehatan, Lainnya.
+- PEMASUKAN (Income): Gaji Utama, Freelance & Side Hustle, Bonus & Hadiah, Pengembalian Piutang, Investasi (Profit), Lainnya.
+
+ATURAN LOGIKA UTAMA:
+
+1. ALIRAN INVESTASI & TABUNGAN:
+   - Jika tipe adalah PENGELUARAN (Expense) dan deskripsi mengandung "beli", "topup", "nabung", "invest", "emas", "crypto" -> Kategori: 'Investasi & Tabungan'.
+   - Jika tipe adalah PEMASUKAN (Income) dan deskripsi mengandung "jual", "profit", "hasil investasi", "tarik emas" -> Kategori: 'Investasi (Profit)'.
+
+2. ALIRAN HUTANG & PIUTANG:
+   - Jika tipe PENGELUARAN (Expense) dan deskripsi mengandung "pinjamin", "pinjamkan", "kasih pinjam" -> Kategori: 'Pinjaman (Lending)'.
+   - Jika tipe PENGELUARAN (Expense) dan deskripsi mengandung "bayar hutang", "cicilan" -> Kategori: 'Cicilan & Hutang'.
+   - Jika tipe PEMASUKAN (Income) dan deskripsi mengandung "balik", "kembali", "bayar hutang ke saya" -> Kategori: 'Pengembalian Piutang'.
+
+3. KATEGORI UMUM & PEMASUKAN:
+   - "Transfer Jago", "Isi dompet", "Uang di dana" jika tipenya PEMASUKAN (Income) -> Kategori: 'Gaji Utama' atau 'Lainnya' (BUKAN Kesehatan).
+   - "Kesehatan" HANYA digunakan jika ada kata "obat", "sakit", "dokter", "rs", "apotek", atau "vitamin".
+   - Jika bingung untuk pemasukan umum, gunakan 'Lainnya' atau 'Gaji Utama'.
+
+Transaksi Baru:
+- Tipe: {{{type}}}
+- Deskripsi: {{{description}}}
+- Nominal: Rp {{{amount}}}
+
+Berikan saran kategori yang tepat, skor kepercayaan, dan alasan singkat dalam Bahasa Indonesia.`,
 });
 
 const transactionCategorySuggestionFlow = ai.defineFlow(

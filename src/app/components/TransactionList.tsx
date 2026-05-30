@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Transaction, Category } from '@/app/lib/types';
 import { 
   ArrowUpRight, 
@@ -13,7 +13,8 @@ import {
   LayoutGrid,
   Sparkles,
   Filter,
-  X
+  X,
+  Calendar
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -56,6 +57,11 @@ export function TransactionList({ transactions, categories, onDelete, onEdit }: 
   const [activeTab, setActiveTab] = useState<'all' | 'expense' | 'income'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [pageSize, setPageSize] = useState(10);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const filtered = useMemo(() => {
     return transactions
@@ -64,7 +70,40 @@ export function TransactionList({ transactions, categories, onDelete, onEdit }: 
       .filter(t => categoryFilter === 'all' || t.categoryId === categoryFilter);
   }, [transactions, searchTerm, activeTab, categoryFilter]);
 
-  const paginated = filtered.slice(0, pageSize);
+  const groupedTransactions = useMemo(() => {
+    if (!mounted) return [];
+    
+    const groups: { [key: string]: Transaction[] } = {};
+    const today = new Date().toDateString();
+    const yesterday = new Date(Date.now() - 86400000).toDateString();
+
+    filtered.forEach(t => {
+      const date = new Date(t.date);
+      const dateStr = date.toDateString();
+      let label = "";
+
+      if (dateStr === today) label = "Hari Ini";
+      else if (dateStr === yesterday) label = "Kemarin";
+      else label = date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+      if (!groups[label]) groups[label] = [];
+      groups[label].push(t);
+    });
+
+    return Object.entries(groups).map(([label, items]) => ({ label, items }));
+  }, [filtered, mounted]);
+
+  const paginatedGroups = useMemo(() => {
+    let count = 0;
+    const result = [];
+    for (const group of groupedTransactions) {
+      if (count >= pageSize) break;
+      const itemsToShow = group.items.slice(0, pageSize - count);
+      result.push({ label: group.label, items: itemsToShow });
+      count += itemsToShow.length;
+    }
+    return result;
+  }, [groupedTransactions, pageSize]);
 
   const pieData = useMemo(() => {
     const totalFiltered = filtered.reduce((sum, t) => sum + t.amount, 0);
@@ -89,9 +128,12 @@ export function TransactionList({ transactions, categories, onDelete, onEdit }: 
     }).format(val);
   };
 
+  if (!mounted) return null;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in slide-in-from-bottom-2 pb-24 md:pb-0">
       <div className="lg:col-span-8 space-y-6">
+        {/* Filters Header */}
         <div className="flex flex-col gap-4">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="relative flex-1">
@@ -142,61 +184,71 @@ export function TransactionList({ transactions, categories, onDelete, onEdit }: 
           </div>
         </div>
 
-        <div className="space-y-4">
-          {paginated.length > 0 ? (
-            paginated.map((t) => {
-              const cat = categories.find(c => c.id === t.categoryId);
-              return (
-                <div key={t.id} className="neo-card p-4 md:p-5 flex items-center justify-between group bg-white border-b-8 md:border-b-[10px] hover:translate-x-1">
-                  <div className="flex items-center gap-4 md:gap-5 overflow-hidden flex-1">
-                    <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl neo-border flex items-center justify-center shrink-0 shadow-sm" style={{ backgroundColor: cat?.color || '#eee' }}>
-                      {t.type === 'income' ? <ArrowDownLeft className="h-5 w-5 text-white" /> : <ArrowUpRight className="h-5 w-5 text-white" />}
-                    </div>
-                    <div className="overflow-hidden">
-                      <h3 className="text-sm md:text-base font-black truncate tracking-tight leading-tight">{t.description}</h3>
-                      <p className="text-[9px] font-black uppercase opacity-40 truncate">
-                        {cat?.name || 'Tanpa Kategori'} • {new Date(t.date).toLocaleDateString('id-ID')}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-4 md:gap-6 shrink-0 ml-4">
-                    <p className={cn("text-sm md:text-lg font-black italic tracking-tighter tabular-nums", t.type === 'income' ? "text-green-600" : "text-black")}>
-                      {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                    </p>
-                    <div className="hidden md:flex gap-2">
-                      <button onClick={() => onEdit(t)} className="p-2 neo-border rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"><Edit2 className="h-4 w-4" /></button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <button className="p-2 neo-border rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-colors"><Trash2 className="h-4 w-4" /></button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent className="neo-border rounded-[32px]">
-                          <AlertDialogHeader>
-                            <AlertDialogTitle className="font-black italic text-xl">Hapus Data?</AlertDialogTitle>
-                            <AlertDialogDescription className="font-bold">Aksi ini permanen dan tidak bisa dibatalkan dari sistem utama.</AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel className="neo-border rounded-xl">Batal</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => onDelete(t.id)} className="neo-border bg-destructive text-white rounded-xl">Hapus</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                    <button onClick={() => onEdit(t)} className="md:hidden p-2 opacity-30 hover:opacity-100">
-                      <Edit2 className="h-4 w-4" />
-                    </button>
-                  </div>
+        {/* List Content Grouped by Date */}
+        <div className="space-y-10">
+          {paginatedGroups.length > 0 ? (
+            paginatedGroups.map((group) => (
+              <div key={group.label} className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-500">
+                <div className="flex items-center gap-4">
+                  <div className="h-px flex-1 bg-black/5" />
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-30 italic">{group.label}</p>
+                  <div className="h-px flex-1 bg-black/5" />
                 </div>
-              );
-            })
+                <div className="space-y-4">
+                  {group.items.map((t) => {
+                    const cat = categories.find(c => c.id === t.categoryId);
+                    return (
+                      <div key={t.id} className="neo-card p-4 md:p-5 flex items-center justify-between group bg-white border-b-8 md:border-b-[10px] hover:translate-x-1 transition-transform">
+                        <div className="flex items-center gap-4 md:gap-5 overflow-hidden flex-1">
+                          <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl neo-border flex items-center justify-center shrink-0 shadow-sm" style={{ backgroundColor: cat?.color || '#eee' }}>
+                            {t.type === 'income' ? <ArrowDownLeft className="h-5 w-5 text-white" /> : <ArrowUpRight className="h-5 w-5 text-white" />}
+                          </div>
+                          <div className="overflow-hidden">
+                            <h3 className="text-sm md:text-base font-black truncate tracking-tight leading-tight">{t.description}</h3>
+                            <p className="text-[9px] font-black uppercase opacity-40 truncate">
+                              {cat?.name || 'Tanpa Kategori'} • {new Date(t.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-4 md:gap-6 shrink-0 ml-4">
+                          <p className={cn("text-sm md:text-lg font-black italic tracking-tighter tabular-nums", t.type === 'income' ? "text-green-600" : "text-black")}>
+                            {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                          </p>
+                          <div className="hidden md:flex gap-2">
+                            <button onClick={() => onEdit(t)} className="p-2 neo-border rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"><Edit2 className="h-4 w-4" /></button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <button className="p-2 neo-border rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-colors"><Trash2 className="h-4 w-4" /></button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent className="neo-border rounded-[32px]">
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle className="font-black italic text-xl">Hapus Data?</AlertDialogTitle>
+                                  <AlertDialogDescription className="font-bold">Aksi ini permanen dan tidak bisa dibatalkan.</AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel className="neo-border rounded-xl">Batal</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => onDelete(t.id)} className="neo-border bg-destructive text-white rounded-xl">Hapus</AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
           ) : (
             <div className="neo-card bg-white/50 p-16 text-center border-dashed border-2 opacity-20 italic font-bold rounded-[32px] shadow-inner">
-              Belum ada riwayat ditemukan untuk filter ini.
+              Belum ada riwayat ditemukan.
             </div>
           )}
         </div>
 
-        {filtered.length > pageSize && (
+        {/* Load More */}
+        {filtered.length > paginatedGroups.reduce((acc, g) => acc + g.items.length, 0) && (
           <div className="flex justify-center pt-8">
             <Button onClick={() => setPageSize(prev => prev + 10)} className="neo-border bg-black text-white px-10 h-16 font-black uppercase rounded-[28px] text-xs neo-interactive shadow-lg">
               Lihat Lebih Banyak <ChevronDown className="ml-3 h-5 w-5" />
@@ -205,8 +257,9 @@ export function TransactionList({ transactions, categories, onDelete, onEdit }: 
         )}
       </div>
 
+      {/* Analytics Sidebar */}
       <div className="lg:col-span-4 space-y-8">
-        <div className="neo-card bg-white p-6 md:p-8 border-b-[10px] sticky top-28">
+        <div className="neo-card bg-white p-6 md:p-8 border-b-[10px] sticky top-28 transition-all">
           <div className="flex items-center gap-3 mb-6">
             <LayoutGrid className="h-5 w-5 opacity-30" />
             <h4 className="font-black text-[10px] uppercase tracking-widest opacity-30">Distribusi Kategori</h4>

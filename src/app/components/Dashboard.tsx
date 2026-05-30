@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Transaction, Category } from '@/app/lib/types';
 import { 
   Activity,
@@ -13,7 +13,11 @@ import {
   AlertCircle,
   ArrowRight,
   RefreshCw,
-  Heart
+  Heart,
+  CalendarDays,
+  Volume2,
+  VolumeX,
+  Gauge
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { 
@@ -24,7 +28,7 @@ import {
   Tooltip as RechartsTooltip
 } from 'recharts';
 import { cn } from '@/lib/utils';
-import { getFinancialInsight } from '@/ai/flows/financial-insight';
+import { getFinancialInsight, getFinancialInsightAudio } from '@/ai/flows/financial-insight';
 import { Button } from '@/components/ui/button';
 
 interface DashboardProps {
@@ -39,6 +43,9 @@ export function Dashboard({ transactions, categories, emergencyFundTarget, initi
   const [loadingAi, setLoadingAi] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -76,6 +83,25 @@ export function Dashboard({ transactions, categories, emergencyFundTarget, initi
     return { monthlyIncome, monthlyExpense };
   }, [transactions]);
 
+  const budgetAnalysis = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const expenseCategories = categories.filter(c => c.type === 'expense' && c.budget);
+    
+    return expenseCategories.map(cat => {
+      const spent = transactions
+        .filter(t => t.categoryId === cat.id && new Date(t.date).getMonth() === currentMonth && new Date(t.date).getFullYear() === currentYear)
+        .reduce((sum, t) => sum + t.amount, 0);
+      
+      const budget = cat.budget || 0;
+      const percent = budget > 0 ? (spent / budget) * 100 : 0;
+      
+      return { ...cat, spent, percent };
+    }).sort((a, b) => b.percent - a.percent);
+  }, [categories, transactions]);
+
   const progressPercentage = emergencyFundTarget > 0 
     ? Math.min(Math.max((currentBalance / emergencyFundTarget) * 100, 0), 100) 
     : 0;
@@ -85,14 +111,15 @@ export function Dashboard({ transactions, categories, emergencyFundTarget, initi
       ? (monthlyTotals.monthlyIncome - monthlyTotals.monthlyExpense) / monthlyTotals.monthlyIncome 
       : 0;
     
-    if (savingsRatio > 0.3) return { label: 'Sangat Sehat', color: 'text-green-600', bg: 'bg-green-100', icon: Heart };
-    if (savingsRatio > 0) return { label: 'Stabil', color: 'text-blue-600', bg: 'bg-blue-100', icon: Activity };
-    return { label: 'Perlu Perhatian', color: 'text-amber-600', bg: 'bg-amber-100', icon: AlertCircle };
+    if (savingsRatio > 0.3) return { label: 'Sangat Sehat', color: 'text-green-600', bg: 'bg-green-100', icon: Heart, desc: 'Anda menabung dengan sangat baik bulan ini!' };
+    if (savingsRatio > 0) return { label: 'Stabil', color: 'text-blue-600', bg: 'bg-blue-100', icon: Activity, desc: 'Keuangan Anda terjaga dengan cukup aman.' };
+    return { label: 'Perlu Perhatian', color: 'text-amber-600', bg: 'bg-amber-100', icon: AlertCircle, desc: 'Pengeluaran Anda mendekati limit pemasukan.' };
   }, [monthlyTotals]);
 
   async function handleFetchInsight() {
     setLoadingAi(true);
     setAiError(null);
+    setAudioUrl(null);
     try {
       const res = await getFinancialInsight({
         balance: currentBalance,
@@ -101,8 +128,15 @@ export function Dashboard({ transactions, categories, emergencyFundTarget, initi
         emergencyFundTarget
       });
       setAiInsight(res);
+      
+      try {
+        const audioRes = await getFinancialInsightAudio(res.insight);
+        setAudioUrl(audioRes.audio);
+      } catch (err) {
+        console.warn("TTS Failed", err);
+      }
     } catch (e: any) {
-      setAiError("Batas kuota harian tercapai. Silakan coba 1 menit lagi.");
+      setAiError("Batas kuota harian tercapai. Silakan coba sebentar lagi.");
     } finally {
       setLoadingAi(false);
     }
@@ -135,6 +169,17 @@ export function Dashboard({ transactions, categories, emergencyFundTarget, initi
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 4), [transactions]);
 
+  const toggleAudio = () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
   if (!mounted) return null;
 
   return (
@@ -146,7 +191,7 @@ export function Dashboard({ transactions, categories, emergencyFundTarget, initi
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2 opacity-40">
                 <Wallet className="h-3.5 w-3.5" />
-                <p className="text-[10px] font-black uppercase tracking-widest">Status Saldo Utama</p>
+                <p className="text-[10px] font-black uppercase tracking-widest">Saldo Saat Ini</p>
               </div>
               <h3 className="text-4xl md:text-6xl font-black tracking-tighter italic">
                 {formatCurrency(currentBalance)}
@@ -155,7 +200,7 @@ export function Dashboard({ transactions, categories, emergencyFundTarget, initi
             <div className={cn("px-6 py-4 rounded-2xl neo-border flex items-center gap-3", healthStatus.bg)}>
               <healthStatus.icon className={cn("h-6 w-6 animate-pulse-soft", healthStatus.color)} />
               <div className="text-left">
-                <p className="text-[8px] font-black uppercase opacity-40">Finansial</p>
+                <p className="text-[8px] font-black uppercase opacity-40">Kesehatan</p>
                 <p className={cn("text-xs font-black uppercase italic", healthStatus.color)}>{healthStatus.label}</p>
               </div>
             </div>
@@ -176,30 +221,36 @@ export function Dashboard({ transactions, categories, emergencyFundTarget, initi
             </div>
           </div>
 
-          <div className="h-44 w-full mt-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <XAxis dataKey="name" hide />
-                <RechartsTooltip content={({ active, payload }) => {
-                  if (active && payload && payload.length) {
-                    return (
-                      <div className="bg-black text-white p-3 rounded-xl neo-border border-white/20 text-[10px] font-black uppercase shadow-2xl">
-                        <p>{payload[0].payload.name}</p>
-                        <p className={(payload[0].value as number) >= 0 ? "text-green-400" : "text-red-400"}>
-                          {formatCurrency(payload[0].value as number)}
-                        </p>
-                      </div>
-                    );
-                  }
-                  return null;
-                }} />
-                <Area type="monotone" dataKey="balance" stroke="#000" strokeWidth={4} fill="#54D696" fillOpacity={0.2} />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="space-y-4">
+             <div className="flex items-center gap-2 opacity-30">
+               <CalendarDays className="h-3 w-3" />
+               <p className="text-[8px] font-black uppercase tracking-widest">Tren Arus Kas 7 Hari Terakhir</p>
+             </div>
+             <div className="h-44 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <XAxis dataKey="name" hide />
+                  <RechartsTooltip content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      return (
+                        <div className="bg-black text-white p-3 rounded-xl neo-border border-white/20 text-[10px] font-black uppercase shadow-2xl">
+                          <p>{payload[0].payload.name}</p>
+                          <p className={(payload[0].value as number) >= 0 ? "text-green-400" : "text-red-400"}>
+                            {formatCurrency(payload[0].value as number)}
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }} />
+                  <Area type="monotone" dataKey="balance" stroke="#000" strokeWidth={4} fill="#54D696" fillOpacity={0.2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
 
-        {/* AI Insight Card - Re-designed */}
+        {/* AI Insight Card */}
         <div className={cn(
           "neo-card p-6 border-b-[8px] relative overflow-hidden group transition-all duration-500",
           aiError ? "bg-amber-500 text-white" : aiInsight?.status === 'warning' ? "bg-red-500 text-white" : "bg-primary text-white"
@@ -209,18 +260,30 @@ export function Dashboard({ transactions, categories, emergencyFundTarget, initi
               {loadingAi ? <Loader2 className="h-6 w-6 animate-spin" /> : <Sparkles className="h-6 w-6" />}
             </div>
             <div className="flex-1">
-              <h4 className="font-black text-[10px] uppercase tracking-[0.3em] mb-1 opacity-70">Saran Cerdas AI</h4>
+              <div className="flex items-center justify-between mb-1">
+                <h4 className="font-black text-[10px] uppercase tracking-[0.3em] opacity-70">Wawasan Cerdas AI</h4>
+                {audioUrl && (
+                  <button onClick={toggleAudio} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
+                    {isPlaying ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                  </button>
+                )}
+              </div>
               {aiInsight ? (
                 <div className="space-y-4">
                   <p className="font-bold text-base leading-relaxed animate-in fade-in slide-in-from-left-2">{aiInsight.insight}</p>
-                  <Button onClick={handleFetchInsight} disabled={loadingAi} className="h-8 bg-white/20 hover:bg-white/30 text-white border-white/40 neo-border rounded-xl text-[9px] font-black uppercase">
-                    <RefreshCw className={cn("mr-2 h-3 w-3", loadingAi && "animate-spin")} /> Analisis Ulang
-                  </Button>
+                  <div className="flex items-center gap-3">
+                    <Button onClick={handleFetchInsight} disabled={loadingAi} className="h-8 bg-white/20 hover:bg-white/30 text-white border-white/40 neo-border rounded-xl text-[9px] font-black uppercase">
+                      <RefreshCw className={cn("mr-2 h-3 w-3", loadingAi && "animate-spin")} /> Analisis Ulang
+                    </Button>
+                    {audioUrl && (
+                      <audio ref={audioRef} src={audioUrl} onEnded={() => setIsPlaying(false)} className="hidden" />
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <p className="font-bold text-sm opacity-90 italic">
-                    {loadingAi ? "Menganalisis performa keuangan Anda..." : aiError ? aiError : "Dapatkan wawasan cerdas berdasarkan riwayat transaksi Anda."}
+                  <p className="font-bold text-sm opacity-90 italic leading-relaxed">
+                    {loadingAi ? "Menganalisis performa keuangan Anda..." : aiError ? aiError : healthStatus.desc}
                   </p>
                   {!loadingAi && (
                     <Button onClick={handleFetchInsight} className="bg-white text-primary hover:bg-secondary hover:text-black neo-border neo-shadow-sm font-black uppercase text-[10px] px-8 py-6 rounded-2xl transition-all">
@@ -235,6 +298,38 @@ export function Dashboard({ transactions, categories, emergencyFundTarget, initi
       </div>
 
       <div className="lg:col-span-4 space-y-8">
+        {/* Budget vs Actual Tracker */}
+        <div className="neo-card bg-white p-6 border-b-[10px] space-y-6">
+          <div className="flex items-center gap-3 opacity-30">
+            <Gauge className="h-4 w-4" />
+            <h4 className="font-black text-[10px] uppercase tracking-widest">Kontrol Anggaran Bulanan</h4>
+          </div>
+          <div className="space-y-5">
+            {budgetAnalysis.slice(0, 3).map((item) => (
+              <div key={item.id} className="space-y-2">
+                <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                  <span className="truncate max-w-[120px]">{item.name}</span>
+                  <span className={cn(item.percent > 90 ? "text-red-600" : "opacity-40")}>
+                    {formatCurrency(item.spent)} / {formatCurrency(item.budget || 0)}
+                  </span>
+                </div>
+                <div className="h-3 w-full bg-muted rounded-full overflow-hidden neo-border border-1">
+                  <div 
+                    className={cn(
+                      "h-full transition-all duration-1000",
+                      item.percent > 100 ? "bg-red-500" : item.percent > 75 ? "bg-amber-400" : "bg-primary"
+                    )}
+                    style={{ width: `${Math.min(item.percent, 100)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+            {budgetAnalysis.length === 0 && (
+              <p className="text-[9px] font-bold italic opacity-20 text-center py-4 uppercase">Belum ada anggaran diset.</p>
+            )}
+          </div>
+        </div>
+
         {/* Savings Target Card */}
         <div className="neo-card bg-accent/10 p-8 border-b-[10px]">
           <div className="flex justify-between items-center mb-6">
@@ -255,14 +350,14 @@ export function Dashboard({ transactions, categories, emergencyFundTarget, initi
           <Progress value={progressPercentage} className="h-6 neo-border border-2 bg-white rounded-xl overflow-hidden shadow-inner" />
         </div>
 
-        {/* Recent Activity Mini-list */}
+        {/* Recent Activity */}
         <div className="space-y-4">
           <h4 className="font-black uppercase text-[10px] tracking-widest opacity-30">Aktivitas Terakhir</h4>
           <div className="space-y-3">
             {recentTransactions.map((t) => {
               const cat = categories.find(c => c.id === t.categoryId);
               return (
-                <div key={t.id} className="neo-card bg-white p-4 flex items-center justify-between border-b-4 hover:translate-x-1">
+                <div key={t.id} className="neo-card bg-white p-4 flex items-center justify-between border-b-4 hover:translate-x-1 transition-transform">
                   <div className="flex items-center gap-3 overflow-hidden">
                     <div className="h-8 w-8 rounded-lg neo-border flex items-center justify-center shrink-0 shadow-sm" style={{ backgroundColor: cat?.color || '#eee' }}>
                       {t.type === 'income' ? <TrendingUp className="h-3.5 w-3.5 text-white" /> : <TrendingDown className="h-3.5 w-3.5 text-white" />}
